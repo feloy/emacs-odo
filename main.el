@@ -16,6 +16,7 @@
   "Run odo alizer command"
   (interactive)
   (setq temp-buffer "#temp-alizer")
+  (kill-buffer temp-buffer)
   (setq result (call-process "odo" nil temp-buffer nil "alizer" "-o" "json"))
   (if (= result 0)
       (progn
@@ -28,8 +29,13 @@
 	(if (yes-or-no-p msg)
 	    (progn
 	      (setq name (read-string "Component name: " (format "my-%s-app" devfile)))
-	      (if (= 0 (call-process "odo" nil nil nil "init" "--name" name "--devfile" devfile "--devfile-registry" registry))
-		  (message "devfile downloaded")
+	      (erase-buffer)
+	      (if (= 0 (call-process "odo" nil temp-buffer nil "init" "--name" name "--devfile" devfile "--devfile-registry" registry "-o" "json"))
+		  (progn
+		    (goto-char (point-min))
+		    (setq res (json-parse-buffer))
+		    (message "devfile downloaded in %s" (gethash "devfile-path" res))
+		    )
 		(message "cancel")
 		))
 	  )
