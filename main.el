@@ -13,9 +13,7 @@
       (if (member "devfile.yaml" files)
 	  (message "devfile already exists")
 	(if (equal files '("." ".."))
-	    (if (odo-interactive)
-		(pull-starter)
-	      )
+	    (odo-interactive)
 	  (odo-alizer))
 	)
       )
@@ -75,7 +73,7 @@
 
 (defun get-devfile-unique-id (devfile)
   "Returns a unique identifier for a devfile"
-  (concat (gethash "display-name" devfile) " (" (gethash "name" (gethash "registry" devfile)) ")")
+  (concat (gethash "displayName" devfile) " (" (gethash "name" (gethash "registry" devfile)) ")")
   )
 
 (defun get-devfile-by-unique-id (list id)
@@ -90,31 +88,31 @@
     )
   )
 
-(defun pull-starter ()
-  "Pull a starter project"
-  (erase-buffer)
-  (if (= 0 (call-process "odo" nil temp-buffer nil "devfile" "info" "-o" "json"))
-      (progn
-	(goto-char (point-min))
-	(let* ((res (gethash "starterProjects" (json-parse-buffer)))
-	       (projects (starter-project-names res))
-	       (projects (push "NONE" projects))
-	       (project (completing-read "Select a starter project: " projects nil t))
-	       )
-	  (if (not (equal "NONE" project))
-	      (progn
-		(erase-buffer)
-		(if (= 0 (call-process "odo" nil nil nil "devfile" "pull" project "-o" "json"))
-		    (message "Starter project downloaded")
-		  (message "Error downloading starter project")
-		  )
-		)
-	    )
-	  )
-	)
-    (message "error getting starter projects list")
-    )
-  )
+;(defun pull-starter ()
+;  "Pull a starter project"
+;  (erase-buffer)
+;  (if (= 0 (call-process "odo" nil temp-buffer nil "devfile" "info" "-o" "json"))
+;      (progn
+;	(goto-char (point-min))
+;	(let* ((res (gethash "starterProjects" (json-parse-buffer)))
+;	       (projects (starter-project-names res))
+;	       (projects (push "NONE" projects))
+;	       (project (completing-read "Select a starter project: " projects nil t))
+;	       )
+;	  (if (not (equal "NONE" project))
+;	      (progn
+;		(erase-buffer)
+;		(if (= 0 (call-process "odo" nil nil nil "devfile" "pull" project "-o" "json"))
+;		    (message "Starter project downloaded")
+;		  (message "Error downloading starter project")
+;		  )
+;		)
+;	    )
+;	  )
+;	)
+;    (message "error getting starter projects list")
+;    )
+;  )
 
 (defun odo-alizer ()
   "Run odo alizer command"
