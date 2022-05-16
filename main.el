@@ -13,7 +13,7 @@
       (if (member "devfile.yaml" files)
 	  (message "devfile already exists")
 	(if (equal files '("." ".."))
-	    (odo-interactive)
+	    (odo-interactive t)
 	  (odo-alizer))
 	)
       )
@@ -21,7 +21,7 @@
     )
   )
 
-(defun odo-interactive ()
+(defun odo-interactive (ask-starter)
   "Select devfile interactively"
   (erase-buffer)
   (let ((result (call-process "odo" nil temp-buffer nil "registry" "-o" "json")))
@@ -35,11 +35,13 @@
 		 (choice (get-devfile-by-unique-id res typ))
 		 (devfile (gethash "name" choice))
 		 (registry (gethash "name" (gethash "registry" choice)))
+		 (starter (if ask-starter (completing-read "Select a starter project: "
+							   (get-starter-projects-from-registry-list-for-stack res devfile registry) nil t) ""))
 		 (msg (format "The devfile '%s' from the registry '%s' will be downloaded. Continue? " devfile registry))
 		 )
 	    (if (yes-or-no-p msg)
 		(progn
-		  (download-devfile devfile registry)
+		  (download-devfile devfile registry starter)
 		  't)
 	      nil
 	      )
@@ -69,6 +71,18 @@
       )
     (delete-dups types)
     )
+  )
+
+(defun get-starter-projects-from-registry-list-for-stack (list devfile registry)
+  "List starter projects for a specific devfile in the specified registry"
+  (let ((starters ()))
+    (seq-doseq (stack list)
+      (if (and (equal devfile (gethash "name" stack))
+	       (equal registry (gethash "name" (gethash "registry" stack)))
+	       )
+	  (seq-doseq (starter (gethash "starterProjects" stack))
+	    (push starter starters))))
+    starters)
   )
 
 (defun get-devfile-unique-id (devfile)
@@ -117,17 +131,17 @@
 (defun odo-alizer ()
   "Run odo alizer command"
   (erase-buffer)
-  (if (= 0 (call-process "odo" nil temp-buffer nil "alizer" "-o" "json"))
+  (if (= 0 (call-process "odo" nil temp-buffer nil "analyze" "-o" "json"))
       (progn
 	(goto-char (point-min))
 	(let* ((res (json-parse-buffer))
 	       (devfile (gethash "devfile" res))
-	       (registry (gethash "devfile-registry" res))
+	       (registry (gethash "devfileRegistry" res))
 	       (msg (format "The devfile '%s' from the registry '%s' will be downloaded. Continue? " devfile registry))
 	       )
 	  (if (yes-or-no-p msg)
-	      (download-devfile devfile registry)
-	    (odo-interactive)
+	      (download-devfile devfile registry "")
+	    (odo-interactive nil)
 	    )
 	  )
 	)
@@ -135,14 +149,14 @@
     )
   )
 
-(defun download-devfile (devfile registry)
+(defun download-devfile (devfile registry starter)
   (let ((name (read-string "Component name: " (format "my-%s-app" devfile))))
     (erase-buffer)
-    (if (= 0 (call-process "odo" nil temp-buffer nil "init" "--name" name "--devfile" devfile "--devfile-registry" registry "-o" "json"))
+    (if (= 0 (call-process "odo" nil temp-buffer nil "init" "--name" name "--devfile" devfile "--devfile-registry" registry "--starter" starter "-o" "json"))
 	(progn
 	  (goto-char (point-min))
 	  (let ((res (json-parse-buffer)))
-	    (message "devfile downloaded in %s" (gethash "devfile-path" res))
+	    (message "devfile downloaded in %s" (gethash "devfilePath" res))
 	    )
 	  )
       (message "error initializing project")
@@ -180,36 +194,71 @@
     )
   )
 
+(defun call-odo-describe-component ()
+  "Call odo describe component -o json command"
+  (erase-buffer)
+  (if (= 0 (call-process "odo" nil temp-buffer nil "describe" "component" "-o" "json"))
+      (progn
+	(goto-char (point-min))
+	(json-parse-buffer)
+	)
+    )
+  )
+
+(defun get-odo-features (desc)
+  "Get odo features from component description"
+  (gethash "supportedOdoFeatures" (gethash "devfileData" desc))
+  )
+
 (defun display-odo-list (list)
   ""
   (let (
 	(odo-list-buffer "*odo-list*")
 	(all-components)
+	(componentInDevfile (gethash "componentInDevfile" list))
 	)
-    (generate-new-buffer odo-list-buffer)
-    (switch-to-buffer odo-list-buffer)
-    (erase-buffer)
-    (insert "odo components in namespace: " (gethash "namespace" list) "\n\n")
+;    (insert "odo components in namespace: " (gethash "namespace" list) "\n\n")
     (seq-doseq (component (gethash "components" list))
       (let* (
 	    (name (gethash "name" component))
-	    (managedby (gethash "managed-by" component))
-	    (modes (get-modes-as-string (gethash "modes" component)))
-	    (type (gethash "type" component))
-	    (component (list name managedby modes type))
+	    (managedby (gethash "managedBy" component))
+	    (modes (get-modes-as-string (gethash "runningIn" component)))
+	    (type (gethash "projectType" component))	   
+	    (islocal (equal componentInDevfile name))
+	    (islocalSign (if islocal "*" " "))
+	    (features (if islocal (get-odo-features (call-odo-describe-component)) ""))
+	    (canRunDev
+	     (if islocal
+		 (if (equal (gethash "dev" features) t)
+		     "dev" "-")
+	       "-"))
+	    (canRunDebug
+	     (if islocal
+		 (if (equal (gethash "debug" features) t)
+		     "debug" "-")
+	       "-"))
+	    (canRunDeploy
+	     (if islocal
+		 (if (equal (gethash "deploy" features) t)
+		     "deploy" "-")
+	       "-"))
+	    (component (list islocalSign name managedby modes type canRunDev canRunDebug canRunDeploy))
 	    )
 	(push component all-components)
 	)
       )
+    (generate-new-buffer odo-list-buffer)
+    (switch-to-buffer odo-list-buffer)
+    (erase-buffer)
     (ctbl:create-table-component-region
-     :model (ctbl:make-model-from-list all-components (list "NAME" "MANAGED BY" "MODES" "TYPE")))
+     :model (ctbl:make-model-from-list all-components (list " " "NAME" "MANAGED BY" "RUN IN" "TYPE" "DEV" "DEBUG" "DEPLOY")))
     )
   )
 
 (defun get-modes-as-string (modes)
   "Returns the list of modes as string"
   (let ((list ()))
-    (seq-doseq (mode (hash-table-keys modes))
+    (seq-doseq (mode  modes)
       (push mode list)
       )
     (mapconcat 'identity list ",")
